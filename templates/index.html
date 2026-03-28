@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Michelada monitor</title>
+<script src="/plotly.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { overflow-x: hidden; }
+  body { background: #0d0d0d; color: #ddd; font-family: monospace; font-size: 14px; }
+
+  /* ── tabs ── */
+  .tabs { display: flex; border-bottom: 1px solid #222; overflow-x: auto; }
+  .tab {
+    padding: 10px 22px; cursor: pointer; font-size: 0.85em; color: #666;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .tab:hover { color: #aaa; }
+  .tab.active { color: #5bf; border-bottom-color: #5bf; }
+  .panel { display: none; padding: 16px; }
+  .panel.active { display: block; }
+
+  /* ── spectrum chart ── */
+  #sa-chart {
+    width: 100%;
+    height: clamp(360px, 80vw, 760px);
+    background: #111; border: 1px solid #1e1e1e;
+  }
+  /* sweep progress bar */
+  #sa-progress-wrap {
+    width: 100%; height: 4px; background: #1a1a1a;
+    border: 1px solid #1e1e1e; border-top: none;
+  }
+  #sa-progress {
+    height: 100%; width: 0%; background: #cc0;
+    transition: width 0.15s linear;
+  }
+
+  /* ── spectrum controls ── */
+  .sa-controls {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    margin-top: 14px; align-items: flex-end;
+  }
+  .sa-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .sa-field label {
+    font-size: 0.72em; color: #666;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+  .sa-field input, .sa-field select {
+    background: #1a1a1a; color: #ccc; border: 1px solid #333;
+    padding: 4px 8px; font-family: monospace; font-size: 0.82em;
+    width: 110px;
+  }
+  #sa-rbw { font-size: 0.78em; color: #555; margin-top: 2px; }
+
+  /* ── shared controls ── */
+  .band { margin-bottom: 12px; }
+  .band-name {
+    font-size: 0.72em; color: #666;
+    text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 6px;
+  }
+  .band-row { display: flex; flex-wrap: wrap; gap: 5px; }
+  button {
+    background: #1a1a1a; color: #999; border: 1px solid #333;
+    padding: 5px 10px; cursor: pointer; font-family: monospace; font-size: 0.82em;
+    min-width: 78px; min-height: 32px; transition: background 0.1s;
+    touch-action: manipulation; /* suppress 300 ms tap delay */
+  }
+  button:hover  { background: #252525; color: #fff; }
+  button.active { background: #0d2444; color: #5bf; border-color: #5bf; }
+
+  /* ── FPV tab ── */
+  #now { font-size: 1.2em; color: #5bf; margin-bottom: 10px; }
+  #fpv-banner {
+    display: inline-block; padding: 3px 14px; border-radius: 999px;
+    font-size: 0.72em; font-weight: bold; letter-spacing: 0.14em;
+    text-transform: uppercase; margin-bottom: 14px;
+    background: #1a3d1a; color: #4c4; border: 1px solid #2d6b2d;
+    transition: background 0.4s, color 0.4s, border-color 0.4s;
+  }
+  #fpv-banner.detected { background: #3d1a1a; color: #f55; border-color: #7a2d2d; }
+
+  /* Video scales to viewport width; aspect ratio updated by JS on standard change */
+  #video-frame {
+    display: block;
+    width: min(720px, 100%);
+    aspect-ratio: 720 / 574;
+    background: #000; border: 1px solid #2a2a2a; margin-bottom: 22px;
+    image-rendering: pixelated; object-fit: fill;
+  }
+
+  /* ── PAL/NTSC toggle ── */
+  .std-toggle { display: inline-flex; gap: 0; margin-bottom: 14px; }
+  .std-toggle button {
+    min-width: 56px; min-height: 28px; font-size: 0.78em;
+    border-radius: 0; margin: 0;
+  }
+  .std-toggle button:first-child { border-radius: 3px 0 0 3px; }
+  .std-toggle button:last-child  { border-radius: 0 3px 3px 0; border-left: none; }
+
+  /* ── SDR panel ── */
+  .sdr-panel { margin-top: 24px; }
+  .sdr-panel label {
+    font-size: 0.78em; color: #888; display: block; margin-bottom: 4px;
+  }
+  .sdr-panel input[type=range] {
+    width: min(260px, 100%); vertical-align: middle;
+  }
+  .sdr-panel span {
+    font-size: 0.82em; color: #5bf;
+    margin-left: 8px; min-width: 28px; display: inline-block;
+  }
+  .bw-select {
+    background: #1a1a1a; color: #999; border: 1px solid #333;
+    font-family: monospace; font-size: 0.82em; padding: 4px 8px;
+  }
+
+  /* ── REB quadrant grid ── */
+  .reb-controls {
+    display: flex; gap: 16px; align-items: flex-end;
+    margin-bottom: 12px; flex-wrap: wrap;
+  }
+  .reb-field { display: flex; flex-direction: column; gap: 4px; }
+  .reb-field label {
+    font-size: 0.72em; color: #666;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .reb-field input[type=number] {
+    background: #1a1a1a; color: #ccc; border: 1px solid #333;
+    padding: 4px 8px; font-family: monospace; font-size: 0.82em;
+    width: 80px;
+  }
+  .reb-field input[type=range] {
+    width: 120px; vertical-align: middle;
+  }
+  .reb-field .reb-rbw-val {
+    font-size: 0.82em; color: #5bf; margin-left: 6px;
+  }
+  .reb-quadrants {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 8px;
+    /* fill viewport minus header+tabs+controls (~110px) */
+    height: calc(100vh - 110px);
+  }
+  .reb-quadrant {
+    background: #141414; border: 1px solid #222; border-radius: 4px;
+    padding: 10px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .reb-quadrant-label {
+    font-size: 0.74em; color: #888;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    margin-bottom: 6px; text-align: center;
+    flex-shrink: 0;
+  }
+  .reb-grid {
+    display: grid;
+    gap: 4px;
+    flex: 1;
+    /* columns set by JS via grid-template-columns */
+  }
+  .reb-cell {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72em; color: #fff; text-shadow: 0 0 3px rgba(0,0,0,0.8);
+    border: 1px solid #2a2a2a; border-radius: 3px;
+    background: #111; transition: background 0.3s;
+    min-height: 0; min-width: 0;
+  }
+
+  /* ── collapsible frequency sections ── */
+  .freq-section { margin-bottom: 8px; }
+  .freq-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; background: #161616; border: 1px solid #222;
+    cursor: pointer; user-select: none; border-radius: 3px;
+    touch-action: manipulation;
+  }
+  .freq-header:hover { background: #1e1e1e; }
+  .freq-title {
+    font-size: 0.82em; color: #999;
+    text-transform: uppercase; letter-spacing: 0.1em;
+  }
+  .freq-chevron {
+    font-size: 0.65em; color: #555;
+    margin-left: auto; transition: transform 0.15s;
+  }
+  .freq-header.open .freq-chevron { transform: rotate(90deg); }
+  .freq-body { padding: 8px 0 2px 0; }
+
+  /* ── manual tune ── */
+  .manual-tune { display: flex; gap: 8px; align-items: center; margin-top: 4px; }
+  .manual-tune input {
+    background: #1a1a1a; color: #ccc; border: 1px solid #333;
+    padding: 5px 8px; font-family: monospace; font-size: 0.82em;
+    width: 100px;
+  }
+
+  /* ── calibration badge ── */
+  .cal-badge {
+    font-size: 0.65em; padding: 2px 8px; border-radius: 999px;
+    font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase;
+    margin-left: 8px; flex-shrink: 0;
+  }
+  .cal-none { background: #1a1a1a; color: #555; border: 1px solid #2a2a2a; }
+  .cal-ok   { background: #1a3d1a; color: #4c4; border: 1px solid #2d6b2d; }
+  .cal-run  { background: #3d3400; color: #cc4; border: 1px solid #665500; }
+
+  /* ── progress bar ── */
+  .cal-bar-wrap {
+    background: #1a1a1a; border: 1px solid #333;
+    height: 8px; border-radius: 4px; overflow: hidden; margin: 6px 0;
+  }
+  .cal-bar { background: #5bf; height: 100%; width: 0%; transition: width 0.3s; }
+
+  /* ════════════════════════════════════════════════════════
+     RESPONSIVE — narrow screens (portrait phone, ≤ 600 px)
+     ════════════════════════════════════════════════════════ */
+  @media (max-width: 600px) {
+    body { font-size: 13px; }
+    .panel { padding: 10px; }
+    .tab { padding: 10px 12px; font-size: 0.78em; letter-spacing: 0.03em; }
+
+    /* Spectrum controls: smaller inputs, allow two-per-row */
+    .sa-field input, .sa-field select { width: 90px; font-size: 0.75em; }
+    .sa-controls { gap: 8px; margin-top: 10px; }
+
+    /* Bigger touch targets for channel buttons */
+    button { min-width: 62px; min-height: 36px; font-size: 0.73em; padding: 5px 6px; }
+    .band-row { gap: 4px; }
+
+    #now { font-size: 1em; }
+    #fpv-banner { font-size: 0.68em; }
+    .freq-title { font-size: 0.78em; }
+
+    .reb-quadrants {
+      grid-template-columns: 1fr;
+      grid-template-rows: repeat(4, 1fr);
+      height: calc(100vh - 100px);
+    }
+    .reb-cell { font-size: 0.6em; }
+    .reb-controls { gap: 10px; }
+  }
+
+  /* ════════════════════════════════════════════════════════
+     RESPONSIVE — very narrow (≤ 380 px, e.g. old phones)
+     ════════════════════════════════════════════════════════ */
+  @media (max-width: 380px) {
+    .sa-field input, .sa-field select { width: 76px; }
+    button { min-width: 52px; font-size: 0.68em; }
+  }
+
+  /* ════════════════════════════════════════════════════════
+     RESPONSIVE — landscape phone (short viewport, ≤ 500 px tall)
+     ════════════════════════════════════════════════════════ */
+  @media (max-height: 500px) and (orientation: landscape) {
+    #sa-chart { height: clamp(260px, 64vh, 480px); }
+    .sa-controls { margin-top: 8px; gap: 8px; }
+    .panel { padding: 8px; }
+    .band { margin-bottom: 8px; }
+    #video-frame { margin-bottom: 12px; }
+    .sdr-panel { margin-top: 14px; }
+  }
+
+  /* ── Detector tab ── */
+  .det-status {
+    display: inline-block; padding: 4px 16px; border-radius: 999px;
+    font-size: 0.78em; font-weight: bold; letter-spacing: 0.12em;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .det-status.active { background: #3d1a1a; color: #f55; border: 1px solid #7a2d2d; }
+  .det-status.inactive { background: #1a1a1a; color: #555; border: 1px solid #2a2a2a; }
+  .det-bands {
+    font-size: 0.82em; color: #888; margin-bottom: 14px;
+  }
+  .det-bands span { color: #5bf; margin-right: 10px; }
+  .det-scanning {
+    font-size: 0.82em; color: #666; margin-bottom: 14px;
+  }
+  .det-scanning em { color: #5bf; font-style: normal; }
+  .det-log {
+    max-height: 400px; overflow-y: auto;
+    background: #111; border: 1px solid #222; border-radius: 4px;
+    padding: 8px; margin-top: 10px;
+  }
+  .det-log-entry {
+    font-size: 0.78em; color: #ccc; padding: 3px 0;
+    border-bottom: 1px solid #1a1a1a;
+  }
+  .det-log-entry .freq { color: #f55; font-weight: bold; }
+  .det-log-entry .ts { color: #555; margin-left: 10px; }
+  .det-msg {
+    font-size: 0.82em; color: #cc4; margin-top: 12px;
+    display: none;
+  }
+  .restart-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(0,0,0,0.88);
+    flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 24px;
+  }
+  .restart-overlay.show { display: flex; }
+  .restart-overlay h1 {
+    color: #f55; font-size: 2em; margin-bottom: 16px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .restart-overlay p {
+    color: #ccc; font-size: 1.1em; max-width: 480px; line-height: 1.6;
+  }
+  .restart-overlay code {
+    background: #1a1a1a; color: #5bf; padding: 2px 10px;
+    border-radius: 3px; font-size: 1em;
+  }
+</style>
+</head>
+<body>
+
+<div class="restart-overlay" id="restart-overlay">
+  <h1>Restart Required</h1>
+  <p id="restart-overlay-msg"></p>
+  <p style="margin-top:18px; color:#888; font-size:0.85em;">
+    Run <code>sudo reboot</code> or restart the program manually.
+  </p>
+</div>
+
+<div style="padding:14px 16px 0; font-size:1.4em; font-weight:bold; color:#5bf; letter-spacing:0.06em;">Michelada</div>
+
+<div class="tabs">
+  <div class="tab active" data-tab="sa">Spectrum Analyzer</div>
+  <div class="tab" data-tab="fpv">FPV Video</div>
+  <div class="tab" data-tab="reb">REB</div>
+  <div class="tab" data-tab="detector">Detector</div>
+</div>
+
+<!-- ═══════════════════════════════ Spectrum Analyzer ═══════════════════════ -->
+<div class="panel active" id="panel-sa">
+  <div id="sa-chart"></div>
+  <div id="sa-progress-wrap"><div id="sa-progress"></div></div>
+  <div class="sa-controls">
+    <div class="sa-field">
+      <label>Radio</label>
+      <select id="sa-radio">
+        <option value="hif" selected>HiF (100M-6G)</option>
+        <option value="s1g">S1G (389-510 / 779-1020 MHz)</option>
+      </select>
+    </div>
+    <div class="sa-field">
+      <label>Start (MHz)</label>
+      <input type="number" id="sa-start" value="5725" min="100" max="6000">
+    </div>
+    <div class="sa-field">
+      <label>Stop (MHz)</label>
+      <input type="number" id="sa-stop" value="5825" min="100" max="6000">
+    </div>
+    <div class="sa-field">
+      <label>Gain (0-63)</label>
+      <input type="number" id="sa-gain" value="48" min="0" max="63">
+    </div>
+    <div class="sa-field">
+      <label>AGC</label>
+      <select id="sa-agc">
+        <option value="0" selected>Off</option>
+        <option value="1">On</option>
+      </select>
+    </div>
+    <div class="sa-field">
+      <label>Sample rate</label>
+      <select id="sa-sr">
+        <option value="400000">400 kSps</option>
+        <option value="500000">500 kSps</option>
+        <option value="666000">666 kSps</option>
+        <option value="800000">800 kSps</option>
+        <option value="1000000">1 MSps</option>
+        <option value="2000000">2 MSps</option>
+        <option value="4000000" selected>4 MSps</option>
+      </select>
+    </div>
+    <div class="sa-field">
+      <label>FFT size (RBW)</label>
+      <select id="sa-fft">
+        <option value="64">64</option>
+        <option value="128">128</option>
+        <option value="256">256</option>
+        <option value="512">512</option>
+        <option value="1024" selected>1024</option>
+        <option value="2048">2048</option>
+      </select>
+      <div id="sa-rbw">RBW: 3906 Hz</div>
+    </div>
+    <div class="sa-field">
+      <label>&nbsp;</label>
+      <button id="sa-apply">Apply</button>
+    </div>
+    <div class="sa-field">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap;">
+        <input type="checkbox" id="sa-labels-toggle" checked> Labels
+      </label>
+    </div>
+  </div>
+
+  <!-- ── Gain calibration (collapsible) ── -->
+  <div class="freq-section" style="margin-top:18px;">
+    <div class="freq-header" id="cal-hdr">
+      <span class="freq-title">Gain Calibration (tinySA Ultra)</span>
+      <span id="cal-badge" class="cal-badge cal-none">Uncalibrated</span>
+      <span class="freq-chevron">&#9654;</span>
+    </div>
+    <div class="freq-body" id="cal-body" style="display:none; padding-top:10px;">
+      <div class="sa-controls">
+        <div class="sa-field">
+          <label>Port</label>
+          <input type="text" id="cal-port" value="/dev/ttyACM0" style="width:140px;">
+        </div>
+        <div class="sa-field">
+          <label>Level (dBm)</label>
+          <input type="number" id="cal-level" value="-20" min="-50" max="0" style="width:80px;">
+        </div>
+        <div class="sa-field">
+          <label>Start (MHz)</label>
+          <input type="number" id="cal-start" value="5725" min="100" max="6000">
+        </div>
+        <div class="sa-field">
+          <label>Stop (MHz)</label>
+          <input type="number" id="cal-stop" value="5825" min="100" max="6000">
+        </div>
+        <div class="sa-field">
+          <label>Step (MHz)</label>
+          <input type="number" id="cal-step" value="5" min="1" max="100" style="width:70px;">
+        </div>
+        <div class="sa-field">
+          <label>&nbsp;</label>
+          <button id="cal-run">Run</button>
+        </div>
+      </div>
+      <div id="cal-progress-wrap" style="display:none; margin-top:10px;">
+        <div class="cal-bar-wrap"><div id="cal-bar" class="cal-bar"></div></div>
+        <div id="cal-lbl" style="font-size:0.72em; color:#666; margin-top:3px;"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ FPV Video ════════════════════════════════ -->
+<div class="panel" id="panel-fpv">
+  <div id="now">R6 &mdash; 5843 MHz</div>
+  <div style="display:flex; align-items:center; gap:14px; margin-bottom:14px; flex-wrap:wrap;">
+    <div id="fpv-banner" style="margin-bottom:0;">No FPV detected</div>
+    <div class="std-toggle">
+      <button id="std-pal" class="active" onclick="setStandard('pal')">PAL</button>
+      <button id="std-ntsc" onclick="setStandard('ntsc')">NTSC</button>
+    </div>
+  </div>
+  <img id="video-frame" src="" alt="FPV stream">
+
+  <div id="bands"></div>
+
+  <div class="band" style="margin-top:14px;">
+    <div class="band-name">Manual frequency</div>
+    <div class="manual-tune">
+      <input type="number" id="manual-mhz" placeholder="MHz" min="100" max="6000">
+      <button id="manual-tune-btn">Tune</button>
+    </div>
+  </div>
+
+  <div class="sdr-panel">
+    <div class="band-name">SDR parameters (FPV)</div>
+    <div class="band">
+      <label>HiF gain (0-63)<span id="gain-val">48</span></label>
+      <input type="range" id="gain-slider" min="0" max="63" value="48">
+    </div>
+    <div class="band">
+      <label>IF filter bandwidth (AT86RF215 steps)</label>
+      <select id="bw-select" class="bw-select">
+        <option value="160000">160 kHz</option>
+        <option value="200000">200 kHz</option>
+        <option value="250000">250 kHz</option>
+        <option value="320000">320 kHz</option>
+        <option value="400000">400 kHz</option>
+        <option value="500000">500 kHz</option>
+        <option value="630000">630 kHz</option>
+        <option value="800000">800 kHz</option>
+        <option value="1000000">1000 kHz</option>
+        <option value="1250000">1250 kHz</option>
+        <option value="1600000">1600 kHz</option>
+        <option value="2000000" selected>2000 kHz (default)</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ REB ══════════════════════════════════════ -->
+<div class="panel" id="panel-reb">
+  <div class="reb-controls">
+    <div class="reb-field">
+      <label>Min dBm (blue)</label>
+      <input type="number" id="reb-min" value="-100" step="5">
+    </div>
+    <div class="reb-field">
+      <label>Max dBm (green)</label>
+      <input type="number" id="reb-max" value="-40" step="5">
+    </div>
+    <div class="reb-field">
+      <label>RBW (samples)<span class="reb-rbw-val" id="reb-rbw-val">1024</span></label>
+      <input type="range" id="reb-rbw" min="256" max="4096" step="256" value="1024">
+    </div>
+  </div>
+  <div id="reb-grids" class="reb-quadrants"></div>
+</div>
+
+<!-- ═══════════════════════════════ Detector ════════════════════════════════ -->
+<div class="panel" id="panel-detector">
+  <div id="det-active-view" style="display:none;">
+    <div id="det-badge" class="det-status active">Active</div>
+    <div class="det-bands">Bands: <span id="det-bands-list"></span></div>
+    <div class="det-scanning">Scanning: <em id="det-freq">—</em></div>
+    <button id="det-disable-btn">Disable Detector</button>
+    <div id="det-disable-msg" class="det-msg">Detector disabled. Restart the program to return to normal mode.</div>
+    <div class="det-log" id="det-log"></div>
+  </div>
+  <div id="det-inactive-view" style="display:none;">
+    <div class="det-status inactive">Inactive</div>
+    <p style="color:#888; font-size:0.85em; margin:14px 0;">
+      Detector mode scans all configured FPV bands and fires alert scripts when video is found.
+    </p>
+    <button id="det-enable-btn">Enable Detector</button>
+    <div id="det-enable-msg" class="det-msg">Detector enabled. Restart the program to activate.</div>
+  </div>
+</div>
+
+<script>
+// ── Tab switching ─────────────────────────────────────────────────────────
+const modeMap = {sa: 'spectrum', fpv: 'fpv', reb: 'reb', detector: 'detector'};
+let detectorActive = false; // set by init fetch
+
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    const name = tab.dataset.tab;
+    // In detector mode, only detector tab is clickable
+    if (detectorActive && name !== 'detector') return;
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab));
+    document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+    // Don't send mode switch if detector is active (it owns the radio)
+    if (!detectorActive) {
+      fetch('/mode?m=' + modeMap[name]).catch(console.error);
+    }
+    if (name === 'fpv') {
+      document.getElementById('video-frame').src = '/video';
+      startFPVStatusPoll();
+    } else {
+      document.getElementById('video-frame').src = '';
+      stopFPVStatusPoll();
+    }
+    if (name === 'reb') { connectREB(); } else { disconnectREB(); }
+  });
+});
+
+// ── Spectrum Analyzer ────────────────────────────────────────────────────
+const SA_LABELS = {{.Labels}};
+let saChart = null;
+let saShowLabels = true;
+
+function visibleLabels() {
+  const lo = parseFloat(document.getElementById('sa-start').value) || 0;
+  const hi = parseFloat(document.getElementById('sa-stop').value) || 99999;
+  if (!SA_LABELS) return [];
+  return SA_LABELS.filter(l => l.start >= lo && l.stop <= hi);
+}
+
+function buildLabelShapes() {
+  if (!saShowLabels) return [];
+  const labels = visibleLabels();
+  const shapes = [];
+  const colors = ['#f55','#5bf','#4c4','#cc4','#c5f','#f84','#5ff','#f5a'];
+  labels.forEach((lbl, i) => {
+    const c = colors[i % colors.length];
+    shapes.push(
+      {type:'line', x0:lbl.start, x1:lbl.start, y0:0, y1:1, yref:'paper',
+       line:{color:c, width:1, dash:'dot'}},
+      {type:'line', x0:lbl.stop, x1:lbl.stop, y0:0, y1:1, yref:'paper',
+       line:{color:c, width:1, dash:'dot'}}
+    );
+  });
+  return shapes;
+}
+
+function buildLabelAnnotations() {
+  if (!saShowLabels) return [];
+  const labels = visibleLabels();
+  const colors = ['#f55','#5bf','#4c4','#cc4','#c5f','#f84','#5ff','#f5a'];
+  return labels.map((lbl, i) => ({
+    x: (lbl.start + lbl.stop) / 2, y: 1, yref: 'paper', yanchor: 'bottom',
+    text: lbl.name, showarrow: false,
+    font: {color: colors[i % colors.length], size: 10, family: 'monospace'},
+    bgcolor: 'rgba(17,17,17,0.8)', borderpad: 2,
+  }));
+}
+
+function initChart() {
+  saChart = {
+    data: [{x: [], y: [], type: 'scatter', mode: 'lines',
+            line: {color: '#5bf', width: 1}, name: 'power'}],
+    layout: {
+      paper_bgcolor: '#111', plot_bgcolor: '#111',
+      font: {color: '#888', family: 'monospace', size: 11},
+      xaxis: {title: 'Frequency (MHz)', gridcolor: '#1e1e1e', zerolinecolor: '#333',
+              fixedrange: true},
+      yaxis: {
+        title: 'Power (dBfs)',
+        gridcolor: '#1e1e1e', zerolinecolor: '#333',
+        range: [-130, -10],
+        fixedrange: true,
+      },
+      margin: {l: 60, r: 20, t: 20, b: 50},
+      shapes: buildLabelShapes(),
+      annotations: buildLabelAnnotations(),
+    },
+    config: {responsive: true, displayModeBar: false, scrollZoom: false}
+  };
+  Plotly.newPlot('sa-chart', saChart.data, saChart.layout, saChart.config);
+}
+
+let saLastSweepTime = 0;
+let saProgressAnim = null;
+
+function updateChart(bins) {
+  const freqs = bins.map(b => b.f / 1e6);
+  const powers = bins.map(b => b.p);
+  Plotly.restyle('sa-chart', {x: [freqs], y: [powers]}, [0]);
+
+  // Estimate sweep duration from arrival interval, then animate progress 0→100%
+  const now = performance.now();
+  const sweepMs = saLastSweepTime ? (now - saLastSweepTime) : 3000;
+  saLastSweepTime = now;
+
+  const bar = document.getElementById('sa-progress');
+  if (saProgressAnim) cancelAnimationFrame(saProgressAnim);
+  bar.style.transition = 'none';
+  bar.style.width = '0%';
+  // Force reflow then animate
+  bar.offsetWidth;
+  bar.style.transition = 'width ' + (sweepMs * 0.95) + 'ms linear';
+  bar.style.width = '100%';
+}
+
+document.getElementById('sa-labels-toggle').addEventListener('change', function() {
+  saShowLabels = this.checked;
+  Plotly.relayout('sa-chart', {
+    shapes: buildLabelShapes(),
+    annotations: buildLabelAnnotations(),
+  });
+});
+
+// RBW display
+function updateRBW() {
+  const sr = parseInt(document.getElementById('sa-sr').value);
+  const fs = parseInt(document.getElementById('sa-fft').value);
+  const rbw = sr / fs;
+  document.getElementById('sa-rbw').textContent =
+    'RBW: ' + (rbw >= 1000 ? (rbw/1000).toFixed(1) + ' kHz' : rbw.toFixed(0) + ' Hz');
+}
+document.getElementById('sa-sr').addEventListener('change', updateRBW);
+document.getElementById('sa-fft').addEventListener('change', updateRBW);
+updateRBW();
+
+// Apply button
+document.getElementById('sa-apply').addEventListener('click', () => {
+  const start = parseInt(document.getElementById('sa-start').value) * 1e6;
+  const stop  = parseInt(document.getElementById('sa-stop').value)  * 1e6;
+  const gain  = document.getElementById('sa-gain').value;
+  const agc   = document.getElementById('sa-agc').value;
+  const sr    = document.getElementById('sa-sr').value;
+  const fft   = document.getElementById('sa-fft').value;
+  const radio = document.getElementById('sa-radio').value;
+  fetch('/spectrum/config?start=' + start + '&stop=' + stop + '&gain=' + gain +
+        '&agc=' + agc + '&samplerate=' + sr + '&fftsize=' + fft + '&radio=' + radio)
+    .catch(console.error);
+  // Refresh labels for new frequency range
+  Plotly.relayout('sa-chart', {shapes: buildLabelShapes(), annotations: buildLabelAnnotations()});
+});
+
+// WebSocket
+let saWS = null;
+function connectSA() {
+  saWS = new WebSocket('ws://' + location.host + '/spectrum/ws');
+  saWS.onopen = () => initChart();
+  saWS.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'sweep') updateChart(msg.bins);
+    if (msg.type === 'config') {
+      const c = msg.config;
+      document.getElementById('sa-start').value = Math.round(c.StartFreq / 1e6);
+      document.getElementById('sa-stop').value  = Math.round(c.StopFreq  / 1e6);
+      document.getElementById('sa-gain').value  = c.Gain;
+      document.getElementById('sa-agc').value   = c.AGC ? '1' : '0';
+      document.getElementById('sa-sr').value    = c.SampleRate;
+      document.getElementById('sa-fft').value   = c.FFTSize;
+      document.getElementById('sa-radio').value = c.Radio === 0 ? 'hif' : 's1g';
+      updateRBW();
+      // S1G RSSI is calibrated dBm from the AT86RF215 RSSI register.
+      // HiF power-envelope is uncalibrated dBfs (no absolute reference).
+      Plotly.relayout('sa-chart', {
+        'yaxis.title': c.Radio === 1 ? 'Power (dBm)' : 'Power (dBfs)',
+        shapes: buildLabelShapes(),
+        annotations: buildLabelAnnotations(),
+      });
+    }
+  };
+  saWS.onclose = () => setTimeout(connectSA, 2000);
+}
+connectSA();
+
+// ── FPV channels ─────────────────────────────────────────────────────────
+const FREQ_BANDS = [
+  { label: '5.8 GHz', open: true, bands: {
+    'Raceband':      [['R1',5658],['R2',5695],['R3',5732],['R4',5769],['R5',5806],['R6',5843],['R7',5880],['R8',5917]],
+    'Band A':        [['A1',5865],['A2',5845],['A3',5825],['A4',5805],['A5',5785],['A6',5765],['A7',5745],['A8',5725]],
+    'Band B':        [['B1',5733],['B2',5752],['B3',5771],['B4',5790],['B5',5809],['B6',5828],['B7',5847],['B8',5866]],
+    'Band E':        [['E1',5705],['E2',5685],['E3',5665],['E4',5645],['E5',5885],['E6',5905],['E7',5925],['E8',5945]],
+    'Fat Shark (F)': [['F1',5740],['F2',5760],['F3',5780],['F4',5800],['F5',5820],['F6',5840],['F7',5860],['F8',5880]],
+  }},
+  // NOTE: 3-5 GHz frequencies may fail PLL lock on CaribouLite (RFFC5072 gap).
+  // A failed tune deactivates the radio; the Stop→Start in setFPVChannel recovers it.
+  { label: '3.3 GHz ⚠', open: false, bands: {
+    'Band A': [['3A1',3000],['3A2',3030],['3A3',3060],['3A4',3090],['3A5',3120],['3A6',3150],['3A7',3180],['3A8',3210]],
+    'Band B': [['3B1',3240],['3B2',3270],['3B3',3300],['3B4',3330],['3B5',3370],['3B6',3400],['3B7',3430],['3B8',3470]],
+    'Band E': [['3E1',3500],['3E2',3530],['3E3',3560],['3E4',3590],['3E5',3620],['3E6',3650],['3E7',3680],['3E8',3710]],
+    'Band F': [['3F1',3740],['3F2',3770],['3F3',3800],['3F4',3830],['3F5',3860],['3F6',3890],['3F7',3920],['3F8',3950]],
+    'Band R': [['3R1',3980],['3R2',4010],['3R3',4040],['3R4',4070],['3R5',4100],['3R6',4130],['3R7',4160],['3R8',4190]],
+    'Band P': [['3P1',4220],['3P2',4250],['3P3',4280],['3P4',4310],['3P5',4340],['3P6',4370],['3P7',4400],['3P8',4430]],
+    'Band H': [['3H1',4470],['3H2',4500],['3H3',4530],['3H4',4560],['3H5',4590],['3H6',4620],['3H7',4650],['3H8',4680]],
+    'Band U': [['3U1',4710],['3U2',4740],['3U3',4770],['3U4',4812],['3U5',4839],['3U6',4872],['3U7',4911],['3U8',4938]],
+  }},
+  { label: '1.2 GHz', open: false, bands: {
+    '1.2 GHz': [['L1',1080],['L2',1120],['L3',1160],['L4',1200],['L5',1240],['L6',1280],['L7',1320],['L8',1360],['L9',1258]],
+  }},
+];
+
+let active = 'R6';
+function switchTo(name, mhz) {
+  fetch('/fpv/channel?ch=' + name).then(r => r.json()).then(d => {
+    if (!d.ok) return;
+    active = name;
+    document.getElementById('now').innerHTML = name + ' &mdash; ' + mhz + ' MHz';
+    document.querySelectorAll('button[data-ch]').forEach(b =>
+      b.classList.toggle('active', b.dataset.ch === name));
+  });
+}
+
+const container = document.getElementById('bands');
+for (const section of FREQ_BANDS) {
+  const secDiv = document.createElement('div'); secDiv.className = 'freq-section';
+  const hdr = document.createElement('div');
+  hdr.className = 'freq-header' + (section.open ? ' open' : '');
+  hdr.innerHTML = '<span class="freq-title">' + section.label +
+                  '</span><span class="freq-chevron">&#9654;</span>';
+  const body = document.createElement('div'); body.className = 'freq-body';
+  if (!section.open) body.style.display = 'none';
+  hdr.addEventListener('click', () => {
+    const open = hdr.classList.toggle('open');
+    body.style.display = open ? '' : 'none';
+  });
+  for (const [band, chs] of Object.entries(section.bands)) {
+    const wrap = document.createElement('div'); wrap.className = 'band';
+    const lbl  = document.createElement('div'); lbl.className = 'band-name'; lbl.textContent = band;
+    const row  = document.createElement('div'); row.className = 'band-row';
+    chs.forEach(([name, mhz]) => {
+      const btn = document.createElement('button');
+      btn.textContent = name + ' ' + mhz; btn.dataset.ch = name;
+      if (name === active) btn.classList.add('active');
+      btn.onclick = () => switchTo(name, mhz);
+      row.appendChild(btn);
+    });
+    wrap.appendChild(lbl); wrap.appendChild(row); body.appendChild(wrap);
+  }
+  secDiv.appendChild(hdr); secDiv.appendChild(body); container.appendChild(secDiv);
+}
+
+// Manual frequency tune
+document.getElementById('manual-tune-btn').addEventListener('click', () => {
+  const mhz = parseInt(document.getElementById('manual-mhz').value);
+  if (!mhz || mhz < 100 || mhz > 6000) return;
+  fetch('/fpv/freq?mhz=' + mhz).then(r => r.json()).then(d => {
+    if (!d.ok) return;
+    active = '';
+    document.getElementById('now').innerHTML = 'Manual &mdash; ' + mhz + ' MHz';
+    document.querySelectorAll('button[data-ch]').forEach(b => b.classList.remove('active'));
+  }).catch(console.error);
+});
+document.getElementById('manual-mhz').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('manual-tune-btn').click();
+});
+
+// ── SDR parameters ────────────────────────────────────────────────────────
+const gainSlider = document.getElementById('gain-slider');
+const gainVal    = document.getElementById('gain-val');
+gainSlider.addEventListener('input', function() {
+  gainVal.textContent = this.value;
+  fetch('/sdr/gain?value=' + this.value).catch(console.error);
+});
+fetch('/sdr/gain').then(r => r.json()).then(d => {
+  gainSlider.value = d.gain; gainVal.textContent = d.gain;
+}).catch(console.error);
+
+const bwSelect = document.getElementById('bw-select');
+bwSelect.addEventListener('change', function() {
+  fetch('/sdr/bandwidth?value=' + this.value).catch(console.error);
+});
+fetch('/sdr/bandwidth').then(r => r.json()).then(d => {
+  bwSelect.value = d.bandwidth;
+}).catch(console.error);
+
+// ── FPV status banner ─────────────────────────────────────────────────────
+let fpvStatusTimer = null;
+function pollFPVStatus() {
+  fetch('/fpv/status').then(r => r.json()).then(d => {
+    const b = document.getElementById('fpv-banner');
+    b.textContent = d.detected ? 'FPV detected' : 'No FPV detected';
+    b.classList.toggle('detected', d.detected);
+  }).catch(console.error);
+}
+function startFPVStatusPoll() {
+  if (fpvStatusTimer) return;
+  pollFPVStatus();
+  fpvStatusTimer = setInterval(pollFPVStatus, 1000);
+}
+function stopFPVStatusPoll() {
+  clearInterval(fpvStatusTimer);
+  fpvStatusTimer = null;
+}
+
+// ── Calibration ───────────────────────────────────────────────────────────
+document.getElementById('cal-hdr').addEventListener('click', () => {
+  const hdr = document.getElementById('cal-hdr');
+  const body = document.getElementById('cal-body');
+  const open = hdr.classList.toggle('open');
+  body.style.display = open ? '' : 'none';
+});
+
+let calPollTimer = null;
+
+document.getElementById('cal-run').addEventListener('click', () => {
+  const port  = document.getElementById('cal-port').value;
+  const level = document.getElementById('cal-level').value;
+  const start = document.getElementById('cal-start').value;
+  const stop  = document.getElementById('cal-stop').value;
+  const step  = document.getElementById('cal-step').value;
+  fetch('/calibrate/start?port=' + encodeURIComponent(port) +
+        '&level=' + level + '&start=' + start + '&stop=' + stop + '&step=' + step)
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { alert('Cal error: ' + d.error); return; }
+      document.getElementById('cal-progress-wrap').style.display = '';
+      startCalPoll();
+    })
+    .catch(e => alert('Cal start: ' + e));
+});
+
+function startCalPoll() {
+  if (calPollTimer) return;
+  calPollTimer = setInterval(pollCalStatus, 500);
+}
+function stopCalPoll() {
+  clearInterval(calPollTimer);
+  calPollTimer = null;
+}
+
+function setBadge(cls, text) {
+  const b = document.getElementById('cal-badge');
+  b.className = 'cal-badge ' + cls;
+  b.textContent = text;
+}
+
+function pollCalStatus() {
+  fetch('/calibrate/status').then(r => r.json()).then(d => {
+    const bar = document.getElementById('cal-bar');
+    const lbl = document.getElementById('cal-lbl');
+    if (d.running) {
+      setBadge('cal-run', 'Running');
+      const p = d.progress || {};
+      if (p.Total > 0) {
+        const pct = Math.round(p.Done / p.Total * 100);
+        bar.style.width = pct + '%';
+        lbl.textContent = p.Done + '/' + p.Total + '  ' +
+          (p.FreqHz / 1e6).toFixed(0) + ' MHz  offset ' +
+          p.OffsetDB.toFixed(1) + ' dB';
+      }
+    } else if (d.done) {
+      stopCalPoll();
+      if (d.error) {
+        setBadge('cal-none', 'Error');
+        lbl.textContent = 'Error: ' + d.error;
+      } else {
+        setBadge('cal-ok', d.cal_info || 'Calibrated');
+        bar.style.width = '100%';
+        lbl.textContent = 'Complete — y-axis now shows dBm';
+        // Switch y-axis label to dBm
+        Plotly.relayout('sa-chart', {'yaxis.title': 'Power (dBm)'});
+      }
+    } else if (d.cal_info) {
+      setBadge('cal-ok', d.cal_info);
+    }
+  }).catch(console.error);
+}
+
+// Check for existing calibration on page load
+pollCalStatus();
+
+// ── PAL / NTSC standard toggle ─────────────────────────────────────────────
+function applyStandard(std) {
+  document.getElementById('std-pal').classList.toggle('active', std === 'pal');
+  document.getElementById('std-ntsc').classList.toggle('active', std === 'ntsc');
+  document.getElementById('video-frame').style.aspectRatio =
+    std === 'ntsc' ? '720 / 480' : '720 / 574';
+}
+
+function setStandard(s) {
+  fetch('/fpv/standard?s=' + s)
+    .then(r => r.json())
+    .then(d => applyStandard(d.standard))
+    .catch(console.error);
+}
+
+// Restore current standard on page load
+fetch('/fpv/standard').then(r => r.json()).then(d => applyStandard(d.standard)).catch(console.error);
+
+// ── REB
+let rebWS = null;
+
+function rebColor(power) {
+  const lo = parseFloat(document.getElementById('reb-min').value) || -100;
+  const hi = parseFloat(document.getElementById('reb-max').value) || -40;
+  let t = (power - lo) / (hi - lo);
+  t = Math.max(0, Math.min(1, t));
+  const hue = 240 - t * 120;
+  const lightness = 28 + t * 22;
+  return 'hsl(' + hue + ',85%,' + lightness + '%)';
+}
+
+// RBW slider
+const rebRBWSlider = document.getElementById('reb-rbw');
+const rebRBWVal = document.getElementById('reb-rbw-val');
+rebRBWSlider.addEventListener('input', function() {
+  rebRBWVal.textContent = this.value;
+  fetch('/reb/rbw?v=' + this.value).catch(console.error);
+});
+
+function connectREB() {
+  if (rebWS) return;
+  rebWS = new WebSocket('ws://' + location.host + '/reb/ws');
+  rebWS.onmessage = function(e) {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'reb_band') updateREBQuadrant(msg.index, msg.band);
+  };
+  rebWS.onclose = function() {
+    rebWS = null;
+    if (document.getElementById('panel-reb').classList.contains('active'))
+      setTimeout(connectREB, 2000);
+  };
+}
+
+function disconnectREB() {
+  if (rebWS) { rebWS.close(); rebWS = null; }
+}
+
+// Compute best column count for n cells to form a square-ish grid
+function rebCols(n) {
+  const cols = Math.ceil(Math.sqrt(n));
+  return cols;
+}
+
+function updateREBQuadrant(bi, band) {
+  const container = document.getElementById('reb-grids');
+  let grid = document.getElementById('reb-grid-' + bi);
+  if (!grid) {
+    const quad = document.createElement('div'); quad.className = 'reb-quadrant';
+    quad.style.order = bi;
+    const lbl = document.createElement('div'); lbl.className = 'reb-quadrant-label';
+    lbl.textContent = band.label;
+    grid = document.createElement('div'); grid.className = 'reb-grid';
+    grid.id = 'reb-grid-' + bi;
+    quad.appendChild(lbl); quad.appendChild(grid);
+    container.appendChild(quad);
+  }
+  const n = band.cells.length;
+  const cols = rebCols(n);
+  grid.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+  grid.style.gridTemplateRows = 'repeat(' + Math.ceil(n / cols) + ', 1fr)';
+
+  band.cells.forEach(function(cell, ci) {
+    let el = grid.children[ci];
+    if (!el) {
+      el = document.createElement('div'); el.className = 'reb-cell';
+      grid.appendChild(el);
+    }
+    const mhz = (cell.freq / 1e6).toFixed(0);
+    el.textContent = mhz;
+    el.style.background = rebColor(cell.power);
+    el.title = mhz + ' MHz: ' + cell.power.toFixed(1) + ' dBm';
+  });
+}
+
+// Re-colour cells immediately when thresholds change
+document.getElementById('reb-min').addEventListener('input', recolourREB);
+document.getElementById('reb-max').addEventListener('input', recolourREB);
+function recolourREB() {
+  document.querySelectorAll('.reb-cell').forEach(function(el) {
+    const m = el.title.match(/([-\d.]+) dBm/);
+    if (m) el.style.background = rebColor(parseFloat(m[1]));
+  });
+}
+
+// ── Detector ─────────────────────────────────────────────────────────────
+let detPollTimer = null;
+
+function initDetector() {
+  fetch('/detector/status').then(r => r.json()).then(d => {
+    detectorActive = d.active;
+    if (detectorActive) {
+      // Lock UI to detector tab only
+      document.querySelectorAll('.tab').forEach(t => {
+        if (t.dataset.tab !== 'detector') {
+          t.style.opacity = '0.3';
+          t.style.pointerEvents = 'none';
+        } else {
+          t.classList.add('active');
+        }
+      });
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      document.getElementById('panel-detector').classList.add('active');
+      // Remove active from SA tab
+      document.querySelector('.tab[data-tab="sa"]').classList.remove('active');
+
+      document.getElementById('det-active-view').style.display = '';
+      document.getElementById('det-inactive-view').style.display = 'none';
+      document.getElementById('det-bands-list').textContent = (d.bands || []).join(', ');
+      startDetPoll();
+    } else {
+      document.getElementById('det-active-view').style.display = 'none';
+      document.getElementById('det-inactive-view').style.display = '';
+    }
+  }).catch(console.error);
+}
+
+function startDetPoll() {
+  if (detPollTimer) return;
+  detPollTimer = setInterval(pollDetector, 2000);
+  pollDetector();
+}
+
+function stopDetPoll() {
+  clearInterval(detPollTimer);
+  detPollTimer = null;
+}
+
+function pollDetector() {
+  fetch('/detector/status').then(r => r.json()).then(d => {
+    const freq = d.scanning_freq;
+    document.getElementById('det-freq').textContent =
+      freq ? (freq / 1e6).toFixed(0) + ' MHz (' + freq + ' Hz)' : '—';
+
+    const logEl = document.getElementById('det-log');
+    const entries = d.detections || [];
+    // Rebuild log (newest first)
+    logEl.innerHTML = '';
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const e = entries[i];
+      const div = document.createElement('div');
+      div.className = 'det-log-entry';
+      const mhz = (e.freq_hz / 1e6).toFixed(0);
+      const ts = new Date(e.time).toLocaleTimeString();
+      div.innerHTML = '<span class="freq">' + (e.name || mhz) + ' — ' + mhz + ' MHz</span>' +
+                      '<span class="ts">' + ts + '</span>';
+      logEl.appendChild(div);
+    }
+  }).catch(console.error);
+}
+
+function showRestartOverlay(msg) {
+  document.getElementById('restart-overlay-msg').textContent = msg;
+  document.getElementById('restart-overlay').classList.add('show');
+}
+
+document.getElementById('det-disable-btn').addEventListener('click', function() {
+  fetch('/detector/disable').then(r => r.json()).then(d => {
+    if (d.ok) showRestartOverlay('Detector has been disabled. Restart the program or reboot the Pi to return to normal mode.');
+  }).catch(console.error);
+});
+
+document.getElementById('det-enable-btn').addEventListener('click', function() {
+  fetch('/detector/enable').then(r => r.json()).then(d => {
+    if (d.ok) showRestartOverlay('Detector has been enabled. Restart the program or reboot the Pi for detector mode to take effect.');
+  }).catch(console.error);
+});
+
+// Init detector state on page load
+initDetector();
+</script>
+</body>
+</html>

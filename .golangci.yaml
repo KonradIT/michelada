@@ -1,0 +1,16 @@
+version: "2"
+run:
+  concurrency: 4
+
+linters:
+  default: all
+  disable:
+    - godox
+    - wsl
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+    - gofumpt
+    - gci

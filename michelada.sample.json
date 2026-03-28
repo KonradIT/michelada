@@ -1,0 +1,19 @@
+{
+  "scripts": {
+    "on_video_detected": [
+      "python3 /home/pi/samples/scripts/mesh_alert.py",
+      "python3 /home/pi/samples/scripts/stats.py"
+    ]
+  },
+  "detector_start_on_boot": false,
+  "detector_bands": ["5_8", "1_2"],
+  "detector_cooldown": 60,
+  "default_spectrum_frequencies": [5725, 5825],
+  "labels": [
+    { "name": "ELRS", "start": 700, "stop": 1000  },
+    { "name": "Mavic", "start": 5745, "stop": 5829  },
+    { "name": "Mavic-Alt", "start": 5730, "stop": 5844  },
+    { "name": "Orlan", "start": 820, "stop": 940  },
+    { "name": "Zala", "start": 830, "stop": 950 }
+  ]
+}
