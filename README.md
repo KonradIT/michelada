@@ -15,6 +15,20 @@ Use your CaribouLite SDR as a field-portable spectrum analyzer, FPV drone detect
 - Runs on the Pi, just install and have `./michelada` run automatically on boot, then navigate to pi IP address in your browser: http://pi-ip-address:8080
 - Can be used via USB EThernet using the Pi's USB port, or via WiFi if you provide a hotspot
 
+## Limitations:
+
+The cariboulite SDR is not a very powerful SDR. The max sample rate output is limited to 4 Msps, compared to 61 Msps for a better SDR such as the Pluto Plus or Ettus B120 Mini.
+
+At 4 Msps, it's not possible to do fully FM demod against FPV video. 
+
+So the FPV video analyzer is a bit of a hack, it's not perfect, but it's good enough to detect FPV drones at close range and check that yours is working fine and emitting proper FPV video signal.
+
+Range will also be worse than a dedicated detector such as Whoover 2, Chuyka, Teneta Pro, Prorok, etc...
+
+Those devices use dedicated ASICs such as RX5808 to fully decode the signal and get better reception.
+
+The sub1Ghz antenna is limited to `389.5-510 MHz / 779-1020 MHz`. 
+
 ## Modes
 
 1. Spectrum analyzer
@@ -90,6 +104,10 @@ Feel free to follow Jeff Geerling's guide: https://www.jeffgeerling.com/blog/202
 
 because installing the cariboutlite sdk is as enjoyable as pulling your fingernails off.
 
+Also helpful: https://hagensieker.com/2025/03/04/dummies-guide-for-cariboulite-sdr/
+
+---
+
 Now install Go 1.24:
 
 ```bash
@@ -125,6 +143,22 @@ runner.sh will compile the software, it will take a lot of time, grab a michelad
 
 ls michelada
 ```
+
+Navigate to the IP address of your Pi in your browser: http://pi-ip-address:8080
+
+## Calibration
+
+Plug a SMA to SMA cable between the cariboulite and a tinySA Ultra's RF port.
+
+Plug in a USB cable between the tinySA Ultra and the DATA USB port (closest to the HDMI port in PiZero2), make sure it appears under /dev/ttyXXX.
+
+In the Spectrum Analyzer mode, click on the Gain Calibration tab, and click on the Run button. Make sure port is properly selected and it exist.
+
+Set a range such as 100 MHz - 6 GHz, step 5 MHz. It might take a while to complete.
+
+Capture is saved to `/root/.config/michelada/hif_cal.json`.
+
+Without the the Spectrum Analyzer mode will use uncalibrated readings and won't be very effective.
 
 ## Why the name?
 
