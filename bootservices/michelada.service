@@ -1,0 +1,12 @@
+[Unit]
+Description=Michelada SDR
+After=network.target
+
+[Service]
+Environment=HOME=/root
+ExecStart=/home/pi/michelada/michelada
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

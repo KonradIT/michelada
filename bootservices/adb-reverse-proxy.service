@@ -1,0 +1,14 @@
+[Unit]
+Description=ADB reverse port forwarding
+After=michelada.service
+Requires=michelada.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=pi
+ExecStartPre=/usr/bin/adb wait-for-device
+ExecStart=/usr/bin/adb reverse tcp:8080 tcp:8080
+
+[Install]
+WantedBy=multi-user.target

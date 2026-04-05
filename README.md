@@ -160,6 +160,31 @@ Capture is saved to `/root/.config/michelada/hif_cal.json`.
 
 Without the the Spectrum Analyzer mode will use uncalibrated readings and won't be very effective.
 
+## Using with a phone:
+
+There are several ways to have a phone or tablet connected to the Pi and show the interface on the browser.
+
+- **RPI USB Gadget**: https://github.com/raspberrypi/rpi-usb-gadget, works on Bookworm but requires installing the package. Needs to know the IP address on the Pi, on my phone hostname.local can't be resolved.
+- Instructions from evilsocket's arc: https://www.evilsocket.net/2017/12/07/DIY-Portable-Secrets-Manager-with-a-RPI-Zero-and-the-ARC-Project/
+- Using adb reverse proxy:
+
+```bash
+sudo apt install adb
+adb reverse tcp:8080 tcp:8080
+```
+
+For easy installation, copy the bootservices/michelada.service and bootservices/adb-reverse-proxy.service to /etc/systemd/system/ and enable them:
+```bash
+sudo cp bootservices/michelada.service /etc/systemd/system/
+sudo cp bootservices/adb-reverse-proxy.service /etc/systemd/system/
+sudo systemctl enable michelada.service
+sudo systemctl enable adb-reverse-proxy.service
+sudo systemctl start michelada.service
+sudo systemctl start adb-reverse-proxy.service
+```
+
+Then your phone or tablet needs to be connecte to the Pi's USB port (PI Zero2 is closest to the HDMI port) and then just navigate to localhost:8080 on a browser.
+
 ## Why the name?
 
 [IYKYK](https://en.wikipedia.org/wiki/Shibboleth), it's a tasty drink, [try it.](https://www.chilipeppermadness.com/chili-pepper-recipes/drinks/michelada-recipe-traditional/)
