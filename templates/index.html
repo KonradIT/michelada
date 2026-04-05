@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Michelada monitor</title>
+<title>banderaSA</title>
 <script src="/plotly.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -632,7 +632,10 @@ let saProgressAnim = null;
 function updateChart(bins) {
   const freqs = bins.map(b => b.f / 1e6);
   const powers = bins.map(b => b.p);
+  const maxP = Math.max(...powers);
+  const yMax = maxP > -20 ? Math.ceil(maxP / 10) * 10 : -10;
   Plotly.restyle('sa-chart', {x: [freqs], y: [powers]}, [0]);
+  Plotly.relayout('sa-chart', {'yaxis.range': [-130, yMax]});
 
   // Estimate sweep duration from arrival interval, then animate progress 0→100%
   const now = performance.now();
