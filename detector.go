@@ -35,7 +35,7 @@ type detectorBand struct {
 
 // Sweep ranges per band — covers all possible FPV channels with margin.
 var detectorSweepBands = map[string]detectorBand{
-	"5_8": {Name: "5.8 GHz", StartHz: 5_600_000_000, StopHz: 5_945_000_000, StepHz: 5_000_000},
+	"5_8": {Name: "5.8 GHz", StartHz: 5_640_000_000, StopHz: 5_945_000_000, StepHz: 5_000_000},
 	"1_2": {Name: "1.2 GHz", StartHz: 1_060_000_000, StopHz: 1_380_000_000, StepHz: 5_000_000},
 	"3_3": {Name: "3.3 GHz", StartHz: 2_980_000_000, StopHz: 4_960_000_000, StepHz: 10_000_000},
 }
@@ -165,8 +165,6 @@ func detectorLoop(stop chan struct{}) {
 				sweepPowers []float32
 			)
 
-			first := true
-
 			for freq := band.StartHz; freq <= band.StopHz; freq += band.StepHz {
 				select {
 				case <-stop:
@@ -182,14 +180,10 @@ func detectorLoop(stop chan struct{}) {
 
 				setScanning(int(freq))
 
-				if first {
-					caribou.StopHiF()
-					caribou.StartHiF(int(freq))
-
-					first = false
-				} else {
-					caribou.SetHiFFreq(int(freq))
-				}
+				// Stop→Start every step: recovers from PLL lock failures
+				// (RFFC5072 dead zone or AT86RF215 IF out of range).
+				caribou.StopHiF()
+				caribou.StartHiF(int(freq))
 
 				drain()
 
