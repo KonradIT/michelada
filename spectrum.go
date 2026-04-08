@@ -36,13 +36,16 @@ var (
 
 	specAnalyzer = spectrumanalyzer.New()
 	specConfig   = spectrumanalyzer.Config{
-		Radio:      spectrumanalyzer.RadioHiF,
-		StartFreq:  5_725_000_000,
-		StopFreq:   5_825_000_000,
-		AGC:        false,
-		Gain:       48,
-		SampleRate: 4_000_000,
-		FFTSize:    1024,
+		Radio:          spectrumanalyzer.RadioHiF,
+		StartFreq:      5_725_000_000,
+		StopFreq:       5_825_000_000,
+		AGC:            false,
+		Gain:           48,
+		SampleRate:     4_000_000,
+		FFTSize:        1024,
+		StepSize:       spectrumanalyzer.DefaultHiFStepHz,
+		SettleSamples:  spectrumanalyzer.DefaultSettleSamples,
+		MeasureSamples: spectrumanalyzer.DefaultMeasureSamples,
 	}
 )
 
@@ -58,13 +61,17 @@ func switchMode(m appMode) {
 	}
 	// Calibration and detector own the radio exclusively; block external mode changes.
 	if currentMode == modeCalibration {
-		log.Printf("switchMode(%v) blocked: calibration in progress", m)
+		if verbose {
+			log.Printf("switchMode(%v) blocked: calibration in progress", m)
+		}
 
 		return
 	}
 
 	if currentMode == modeDetector {
-		log.Printf("switchMode(%v) blocked: detector mode active", m)
+		if verbose {
+			log.Printf("switchMode(%v) blocked: detector mode active", m)
+		}
 
 		return
 	}
@@ -92,7 +99,9 @@ func switchMode(m appMode) {
 		startDetector()
 	}
 
-	log.Printf("mode → %v", m)
+	if verbose {
+		log.Printf("mode → %v", m)
+	}
 }
 
 // finishCalibration transitions from modeCalibration back to modeSpectrum.
@@ -108,7 +117,9 @@ func finishCalibration() {
 	currentMode = modeSpectrum
 
 	specAnalyzer.Start(specConfig)
-	log.Printf("mode → spectrum (calibration complete)")
+	if verbose {
+		log.Printf("mode → spectrum (calibration complete)")
+	}
 }
 
 func (m appMode) String() string {
@@ -193,6 +204,27 @@ func spectrumConfigHandler(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("fftsize"); v != "" {
 		if fs, err := strconv.Atoi(v); err == nil {
 			specConfig.FFTSize = fs
+			changed = true
+		}
+	}
+
+	if v := q.Get("stepsize"); v != "" {
+		if ss, err := strconv.Atoi(v); err == nil && ss >= 100_000 && ss <= 10_000_000 {
+			specConfig.StepSize = ss
+			changed = true
+		}
+	}
+
+	if v := q.Get("settle"); v != "" {
+		if s, err := strconv.Atoi(v); err == nil && s >= 64 && s <= 8192 {
+			specConfig.SettleSamples = s
+			changed = true
+		}
+	}
+
+	if v := q.Get("measure"); v != "" {
+		if m, err := strconv.Atoi(v); err == nil && m >= 64 && m <= 16384 {
+			specConfig.MeasureSamples = m
 			changed = true
 		}
 	}

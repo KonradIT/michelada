@@ -6,6 +6,10 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+
+	"github.com/konradit/michelada/internal/calibration"
+	"github.com/konradit/michelada/internal/caribou"
+	"github.com/konradit/michelada/internal/spectrumanalyzer"
 )
 
 // FreqLabel marks a frequency range on the spectrum analyzer chart.
@@ -25,11 +29,21 @@ type MicheladaConfig struct {
 	DetectorCooldown     int         `json:"detector_cooldown"`            // seconds
 	DefaultSpectrumFreqs [2]int      `json:"default_spectrum_frequencies"` // [startMHz, stopMHz]
 	Labels               []FreqLabel `json:"labels"`
+	Verbose              bool        `json:"verbose"`
 }
 
-var appCfg MicheladaConfig
+var (
+	appCfg  MicheladaConfig
+	verbose bool
+)
 
 func configPath() string {
+	// Explicit override: MICHELADA_CONFIG=/path/to/michelada.json
+	if p := os.Getenv("MICHELADA_CONFIG"); p != "" {
+		return p
+	}
+
+	// Interactive sudo: resolve the real user's home
 	sudoUser := os.Getenv("SUDO_USER")
 	if sudoUser != "" {
 		if u, err := user.Lookup(sudoUser); err == nil {
@@ -42,30 +56,37 @@ func configPath() string {
 	return filepath.Join(home, "michelada.json")
 }
 
-func loadConfig() {
+func loadConfig() bool {
 	path := configPath()
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		log.Printf("[config] %s not found, using defaults", path)
+		log.Printf("[config] WARNING: %s not found — create it from michelada.sample.json", path)
 
-		return
+		return false
 	}
 
 	if err != nil {
 		log.Printf("[config] read error: %v", err)
 
-		return
+		return false
 	}
 
 	if err := json.Unmarshal(data, &appCfg); err != nil {
 		log.Printf("[config] parse error: %v", err)
 
-		return
+		return false
 	}
 
-	log.Printf("[config] loaded: detector_start_on_boot=%v bands=%v cooldown=%ds",
-		appCfg.DetectorStartOnBoot, appCfg.DetectorBands, appCfg.DetectorCooldown)
+	verbose = appCfg.Verbose
+	caribou.Verbose = verbose
+	spectrumanalyzer.Verbose = verbose
+	calibration.Verbose = verbose
+
+	log.Printf("[config] loaded: detector_start_on_boot=%v bands=%v cooldown=%ds verbose=%v",
+		appCfg.DetectorStartOnBoot, appCfg.DetectorBands, appCfg.DetectorCooldown, verbose)
+
+	return true
 }
 
 // saveConfig writes the current appCfg back to $HOME/michelada.json.

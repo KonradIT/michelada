@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/konradit/michelada/internal/calibration"
 	"github.com/konradit/michelada/internal/caribou"
 	"github.com/konradit/michelada/internal/pal"
 )
@@ -89,8 +90,13 @@ func serveHome(w http.ResponseWriter, r *http.Request) {
 
 	labelsJSON, _ := json.Marshal(appCfg.Labels)
 
-	err := tmpl.ExecuteTemplate(w, "index.html", map[string]template.JS{
-		"Labels": template.JS(labelsJSON),
+	_, calErr := os.Stat(calibration.DefaultCalPath())
+	showCalOnboarding := os.IsNotExist(calErr)
+
+	err := tmpl.ExecuteTemplate(w, "index.html", map[string]interface{}{
+		"Labels":            template.JS(labelsJSON),
+		"ShowNoConfigWarn":  !configLoaded,
+		"ShowCalOnboarding": showCalOnboarding,
 	})
 	if err != nil {
 		log.Printf("template: %v", err)
@@ -154,7 +160,9 @@ func sdrGainHandler(w http.ResponseWriter, r *http.Request) {
 
 		hifGain = g
 		caribou.SetHiFGain(g)
-		log.Printf("SDR: HiF gain → %d", g)
+		if verbose {
+			log.Printf("SDR: HiF gain → %d", g)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -175,7 +183,9 @@ func sdrBandwidthHandler(w http.ResponseWriter, r *http.Request) {
 
 		hifBandwidth = bw
 		caribou.SetHiFBandwidth(bw)
-		log.Printf("SDR: HiF bandwidth → %d Hz", bw)
+		if verbose {
+			log.Printf("SDR: HiF bandwidth → %d Hz", bw)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -184,10 +194,13 @@ func sdrBandwidthHandler(w http.ResponseWriter, r *http.Request) {
 
 // main
 
-var palDecoder *pal.PALDecoder
+var (
+	palDecoder   *pal.PALDecoder
+	configLoaded bool
+)
 
 func main() {
-	loadConfig()
+	configLoaded = loadConfig()
 
 	// Apply config defaults to spectrum analyzer
 	if appCfg.DefaultSpectrumFreqs[0] > 0 && appCfg.DefaultSpectrumFreqs[1] > 0 {

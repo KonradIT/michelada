@@ -9,6 +9,9 @@ import (
 	"github.com/konradit/michelada/internal/caribou"
 )
 
+// Verbose controls whether detailed sweep logs are printed.
+var Verbose bool
+
 // Radio selects which CaribouLite radio to use for the sweep.
 type Radio int
 
@@ -19,13 +22,16 @@ const (
 
 // Config describes a spectrum sweep.
 type Config struct {
-	Radio      Radio
-	StartFreq  int64 // Hz  (HiF: 100M-6G; S1G: 389.5M-510M or 779M-1020M)
-	StopFreq   int64 // Hz
-	AGC        bool
-	Gain       int // 0-63
-	SampleRate int // Hz for HiF (AT86RF215 steps); ignored for S1G
-	FFTSize    int // power of 2 → RBW = SampleRate / FFTSize
+	Radio          Radio
+	StartFreq      int64 // Hz  (HiF: 100M-6G; S1G: 389.5M-510M or 779M-1020M)
+	StopFreq       int64 // Hz
+	AGC            bool
+	Gain           int // 0-63
+	SampleRate     int // Hz for HiF (AT86RF215 steps); ignored for S1G
+	FFTSize        int // power of 2 → RBW = SampleRate / FFTSize
+	StepSize       int // Hz — HiF frequency increment per scan step (default 500 kHz)
+	SettleSamples  int // samples discarded after retune for PLL lock (default 2048)
+	MeasureSamples int // samples averaged per step for power estimate (default 4096)
 }
 
 // PowerBin is one frequency bucket in a sweep result.
@@ -149,18 +155,18 @@ func (a *Analyzer) broadcast(bins []PowerBin) {
 // HiF sweep
 
 const (
-	// hifStepHz is the frequency increment per scan step.  500 kHz gives good
-	// resolution for FPV-band scanning; the IF filter (2 MHz wide) acts as the
-	// effective RBW (each reading integrates power within a 2 MHz window).
-	hifStepHz = 500_000
+	// DefaultHiFStepHz is the default frequency increment per scan step.
+	// 500 kHz gives good resolution for FPV-band scanning; the IF filter
+	// (2 MHz wide) acts as the effective RBW.
+	DefaultHiFStepHz = 500_000
 
-	// hifSettleSamples: samples to discard after retuning (PLL re-lock time).
+	// DefaultSettleSamples: samples to discard after retuning (PLL re-lock time).
 	// At 4 Msps, 2048 samples ≈ 0.5 ms — enough for the AT86RF215 VCO to settle.
-	hifSettleSamples = 2048
+	DefaultSettleSamples = 2048
 
-	// hifMeasureSamples: samples averaged for the power estimate per step.
+	// DefaultMeasureSamples: samples averaged for the power estimate per step.
 	// 4096 samples at 4 Msps = 1 ms dwell — smooth without being too slow.
-	hifMeasureSamples = 4096
+	DefaultMeasureSamples = 4096
 )
 
 // sweepHiF scans the HiF radio across the configured frequency range using the
@@ -189,10 +195,25 @@ func (a *Analyzer) sweepHiF(cfg Config, stop chan struct{}) {
 		}
 	}
 
+	stepHz := int64(cfg.StepSize)
+	if stepHz <= 0 {
+		stepHz = DefaultHiFStepHz
+	}
+
+	settleSamples := cfg.SettleSamples
+	if settleSamples <= 0 {
+		settleSamples = DefaultSettleSamples
+	}
+
+	measureSamples := cfg.MeasureSamples
+	if measureSamples <= 0 {
+		measureSamples = DefaultMeasureSamples
+	}
+
 	for {
 		var sweep []PowerBin
 
-		for freq := cfg.StartFreq; freq <= cfg.StopFreq; freq += hifStepHz {
+		for freq := cfg.StartFreq; freq <= cfg.StopFreq; freq += stepHz {
 			select {
 			case <-stop:
 				caribou.StopHiF()
@@ -212,7 +233,7 @@ func (a *Analyzer) sweepHiF(cfg Config, stop chan struct{}) {
 			a.pending = a.pending[:0]
 			a.pendingMu.Unlock()
 
-			err := a.waitSamples(hifSettleSamples, stop)
+			err := a.waitSamples(settleSamples, stop)
 			if err != nil {
 				caribou.StopHiF()
 
@@ -224,7 +245,7 @@ func (a *Analyzer) sweepHiF(cfg Config, stop chan struct{}) {
 			a.pendingMu.Unlock()
 
 			// Collect measurement samples
-			err = a.waitSamples(hifMeasureSamples, stop)
+			err = a.waitSamples(measureSamples, stop)
 			if err != nil {
 				caribou.StopHiF()
 
@@ -235,7 +256,7 @@ func (a *Analyzer) sweepHiF(cfg Config, stop chan struct{}) {
 
 			var sum float32
 
-			n := min(len(a.pending), hifMeasureSamples)
+			n := min(len(a.pending), measureSamples)
 
 			for _, v := range a.pending[:n] {
 				sum += v
@@ -256,8 +277,10 @@ func (a *Analyzer) sweepHiF(cfg Config, stop chan struct{}) {
 		}
 
 		if len(sweep) > 0 {
-			log.Printf("[SA] HiF scan: %d bins  %.0f-%.0f MHz",
-				len(sweep), float64(cfg.StartFreq)/1e6, float64(cfg.StopFreq)/1e6)
+			if Verbose {
+				log.Printf("[SA] HiF scan: %d bins  %.0f-%.0f MHz",
+					len(sweep), float64(cfg.StartFreq)/1e6, float64(cfg.StopFreq)/1e6)
+			}
 			a.broadcast(sweep)
 		}
 	}
@@ -350,8 +373,10 @@ func (a *Analyzer) sweepS1G(cfg Config, stop chan struct{}) {
 		}
 
 		if len(sweep) > 0 {
-			log.Printf("[SA] S1G sweep: %d bins  %.1f-%.1f MHz",
-				len(sweep), float64(cfg.StartFreq)/1e6, float64(cfg.StopFreq)/1e6)
+			if Verbose {
+				log.Printf("[SA] S1G sweep: %d bins  %.1f-%.1f MHz",
+					len(sweep), float64(cfg.StartFreq)/1e6, float64(cfg.StopFreq)/1e6)
+			}
 			a.broadcast(sweep)
 		}
 	}

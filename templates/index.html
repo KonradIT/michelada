@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>banderaSA</title>
+<title>Michelada SDR</title>
 <script src="/plotly.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -37,6 +37,13 @@
   #sa-progress {
     height: 100%; width: 0%; background: #cc0;
     transition: width 0.15s linear;
+  }
+
+  /* ── waterfall canvas ── */
+  #sa-waterfall {
+    width: 100%; height: 120px; background: #0a0a0a;
+    border: 1px solid #1e1e1e; border-top: none;
+    display: none; image-rendering: pixelated;
   }
 
   /* ── spectrum controls ── */
@@ -230,6 +237,7 @@
     /* Spectrum controls: smaller inputs, allow two-per-row */
     .sa-field input, .sa-field select { width: 90px; font-size: 0.75em; }
     .sa-controls { gap: 8px; margin-top: 10px; }
+    #sa-waterfall { height: 90px; }
 
     /* Bigger touch targets for channel buttons */
     button { min-width: 62px; min-height: 36px; font-size: 0.73em; padding: 5px 6px; }
@@ -266,6 +274,7 @@
     .band { margin-bottom: 8px; }
     #video-frame { margin-bottom: 12px; }
     .sdr-panel { margin-top: 14px; }
+    #sa-waterfall { height: 80px; }
   }
 
   /* ── Detector tab ── */
@@ -299,7 +308,7 @@
     font-size: 0.82em; color: #cc4; margin-top: 12px;
     display: none;
   }
-  .restart-overlay {
+  .restart-overlay, .noconfig-overlay, .onboarding-overlay {
     display: none;
     position: fixed; inset: 0; z-index: 9999;
     background: rgba(0,0,0,0.88);
@@ -307,6 +316,48 @@
     text-align: center; padding: 24px;
   }
   .restart-overlay.show { display: flex; }
+  .noconfig-overlay.show { display: flex; }
+  .onboarding-overlay.show {
+    display: flex; overflow-y: auto; justify-content: flex-start; padding-top: 40px;
+  }
+  .onboarding-overlay .onb-card {
+    max-width: 640px; width: 100%; text-align: left;
+    background: #181818; border: 1px solid #333; border-radius: 12px;
+    padding: 32px; margin-bottom: 40px;
+  }
+  .onboarding-overlay h1 {
+    color: #5bf; font-size: 1.5em; margin-bottom: 18px;
+    letter-spacing: 0.06em; text-transform: uppercase; text-align: center;
+  }
+  .onboarding-overlay .onb-steps {
+    list-style: none; counter-reset: step; padding: 0;
+  }
+  .onboarding-overlay .onb-steps li {
+    counter-increment: step; position: relative;
+    padding: 10px 0 10px 36px; border-bottom: 1px solid #222;
+    font-size: 0.92em; color: #ccc; line-height: 1.6;
+  }
+  .onboarding-overlay .onb-steps li::before {
+    content: counter(step);
+    position: absolute; left: 0; top: 10px;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: #0d2444; color: #5bf; font-size: 0.82em; font-weight: bold;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .onboarding-overlay .onb-steps li:last-child { border-bottom: none; }
+  .onboarding-overlay code {
+    background: #1a1a1a; color: #5bf; padding: 2px 8px;
+    border-radius: 3px; font-size: 0.92em;
+  }
+  .onboarding-overlay .onb-svg { text-align: center; margin: 18px 0; }
+  .onboarding-overlay .onb-svg svg { max-width: 100%; height: auto; }
+  .onboarding-overlay .onb-dismiss {
+    display: block; margin: 22px auto 0; padding: 10px 32px;
+    background: #0d2444; color: #5bf; border: 1px solid #5bf;
+    font-family: monospace; font-size: 0.92em; cursor: pointer;
+    border-radius: 6px; text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .onboarding-overlay .onb-dismiss:hover { background: #163a6f; }
   .restart-overlay h1 {
     color: #f55; font-size: 2em; margin-bottom: 16px;
     letter-spacing: 0.06em; text-transform: uppercase;
@@ -330,6 +381,41 @@
   </p>
 </div>
 
+{{if .ShowNoConfigWarn}}
+<div class="noconfig-overlay show" id="noconfig-overlay">
+  <h1 style="color:#f55; font-size:2em; margin-bottom:16px; letter-spacing:0.06em; text-transform:uppercase;">Configuration Missing</h1>
+  <p style="color:#ccc; font-size:1.1em; max-width:480px; line-height:1.6;">
+    <code>michelada.json</code> was not found.<br>
+    Copy the sample config and edit it:
+  </p>
+  <p style="margin-top:18px; color:#888; font-size:0.85em;">
+    <code>cp michelada.sample.json ~/michelada.json</code>
+  </p>
+  <p style="margin-top:10px; color:#888; font-size:0.85em;">
+    Then restart the program.
+  </p>
+</div>
+{{end}}
+
+{{if .ShowCalOnboarding}}
+<div class="onboarding-overlay show" id="cal-onboarding">
+  <div class="onb-card">
+    <h1>Calibration Required</h1>
+    <div class="onb-svg">
+      <svg width="600" height="380" viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg"><rect x="20" y="60" width="570" height="260" rx="22" fill="#2c2c2c"/><rect x="20" y="60" width="90" height="260" rx="22" fill="#3a3a3a"/><text x="35" y="120" font-size="14" fill="#cfcfcf" font-family="monospace">CAL</text><text x="35" y="150" font-size="12" fill="#aaa" font-family="monospace">+6dBm RF</text><text x="35" y="170" font-size="12" fill="#aaa" font-family="monospace">5VDC Max</text><circle cx="20" cy="140" r="6" fill="#caa24a"/><circle cx="20" cy="220" r="6" fill="#caa24a"/><rect x="120" y="90" width="420" height="200" rx="10" fill="#0b0b0b"/><text x="130" y="110" font-size="12" fill="#ffd400" font-family="monospace">1T   3.000GHz   -33.8dBm</text><path d="M120 90v200m45-200v200m45-200v200m45-200v200m45-200v200m45-200v200m45-200v200m45-200v200m45-200v200m45-200v200m15-200v200M120 130h420m-420 40h420m-420 40h420m-420 40h420" stroke="#2f2f2f"/><text x="545" y="135" font-size="10" fill="#888" font-family="monospace">-10</text><text x="545" y="175" font-size="10" fill="#888" font-family="monospace">-40</text><text x="545" y="215" font-size="10" fill="#888" font-family="monospace">-70</text><text x="545" y="255" font-size="10" fill="#888" font-family="monospace">-100</text><path fill="none" stroke="#ffd400" stroke-width="2" d="m120 235 30 3 30-2 30 4 30-2 30-1 30 2 20-89 20 88 30 1 30-2 30 3 30-2 30 1 30-2 20 1"/><path stroke="#ffd400" stroke-width="2" d="M320 110v180"/><circle cx="320" cy="150" r="4" fill="#ffd400"/><path fill="#173a8f" d="M120 260h420v30H120z"/><path stroke="#ffd400" stroke-width="2" d="M320 260v30"/><text x="130" y="305" font-size="10" fill="#aaa" font-family="monospace">CENTER 3.000GHz</text><text x="400" y="305" font-size="10" fill="#aaa" font-family="monospace">SPAN 100.000MHz</text><text x="550" y="275" font-size="12" fill="#ccc" font-family="monospace">tinySA</text><text x="550" y="290" font-size="10" fill="#888" font-family="monospace">ULTRA</text></svg>
+    </div>
+    <ol class="onb-steps">
+      <li>Plug a <strong>SMA-to-SMA cable</strong> between the CaribouLite and the tinySA Ultra's <strong>RF port</strong>.</li>
+      <li>Plug a <strong>USB cable</strong> between the tinySA Ultra and the <strong>DATA USB port</strong> (closest to the HDMI port on PiZero2). Make sure it appears under <code>/dev/ttyXXX</code>.</li>
+      <li>In the <strong>Spectrum Analyzer</strong> tab, open the <strong>Gain Calibration</strong> section and click <strong>Run</strong>. Make sure the port is properly selected and exists.</li>
+      <li>Set a range such as <code>100 MHz &ndash; 6 GHz</code>, step <code>5 MHz</code>. It might take a while to complete.</li>
+      <li>Capture is saved to <code>/root/.config/michelada/hif_cal.json</code>.</li>
+    </ol>
+    <button class="onb-dismiss" onclick="document.getElementById('cal-onboarding').classList.remove('show')">Got it, continue</button>
+  </div>
+</div>
+{{end}}
+
 <div style="padding:14px 16px 0; font-size:1.4em; font-weight:bold; color:#5bf; letter-spacing:0.06em;">Michelada</div>
 
 <div class="tabs">
@@ -343,6 +429,7 @@
 <div class="panel active" id="panel-sa">
   <div id="sa-chart"></div>
   <div id="sa-progress-wrap"><div id="sa-progress"></div></div>
+  <canvas id="sa-waterfall"></canvas>
   <div class="sa-controls">
     <div class="sa-field">
       <label>Radio</label>
@@ -395,12 +482,55 @@
       <div id="sa-rbw">RBW: 3906 Hz</div>
     </div>
     <div class="sa-field">
+      <label>Step size</label>
+      <select id="sa-step">
+        <option value="100000">100 kHz</option>
+        <option value="250000">250 kHz</option>
+        <option value="500000" selected>500 kHz</option>
+        <option value="1000000">1 MHz</option>
+        <option value="2000000">2 MHz</option>
+        <option value="5000000">5 MHz</option>
+        <option value="10000000">10 MHz</option>
+      </select>
+    </div>
+    <div class="sa-field">
+      <label>Settle</label>
+      <select id="sa-settle">
+        <option value="256">256</option>
+        <option value="512">512</option>
+        <option value="1024">1024</option>
+        <option value="2048" selected>2048</option>
+        <option value="4096">4096</option>
+      </select>
+    </div>
+    <div class="sa-field">
+      <label>Measure</label>
+      <select id="sa-measure">
+        <option value="256">256</option>
+        <option value="512">512</option>
+        <option value="1024">1024</option>
+        <option value="2048">2048</option>
+        <option value="4096" selected>4096</option>
+        <option value="8192">8192</option>
+      </select>
+    </div>
+    <div class="sa-field">
       <label>&nbsp;</label>
       <button id="sa-apply">Apply</button>
     </div>
     <div class="sa-field">
       <label style="display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap;">
         <input type="checkbox" id="sa-labels-toggle" checked> Labels
+      </label>
+    </div>
+    <div class="sa-field">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap;">
+        <input type="checkbox" id="sa-prev-toggle"> Previous scan
+      </label>
+    </div>
+    <div class="sa-field">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; white-space:nowrap;">
+        <input type="checkbox" id="sa-waterfall-toggle"> Waterfall
       </label>
     </div>
   </div>
@@ -565,6 +695,10 @@ document.querySelectorAll('.tab').forEach(tab => {
 const SA_LABELS = {{.Labels}};
 let saChart = null;
 let saShowLabels = true;
+let saShowPrev = false;
+let saPrevFreqs = [];
+let saPrevPowers = [];
+let saYAxisUnit = 'dBfs';
 
 function visibleLabels() {
   const lo = parseFloat(document.getElementById('sa-start').value) || 0;
@@ -604,8 +738,12 @@ function buildLabelAnnotations() {
 
 function initChart() {
   saChart = {
-    data: [{x: [], y: [], type: 'scatter', mode: 'lines',
-            line: {color: '#5bf', width: 1}, name: 'power'}],
+    data: [
+      {x: [], y: [], type: 'scatter', mode: 'lines',
+       line: {color: '#5bf', width: 1}, name: 'current'},
+      {x: [], y: [], type: 'scatter', mode: 'lines',
+       line: {color: '#f44', width: 1}, name: 'previous', visible: false},
+    ],
     layout: {
       paper_bgcolor: '#111', plot_bgcolor: '#111',
       font: {color: '#888', family: 'monospace', size: 11},
@@ -624,18 +762,57 @@ function initChart() {
     config: {responsive: true, displayModeBar: false, scrollZoom: false}
   };
   Plotly.newPlot('sa-chart', saChart.data, saChart.layout, saChart.config);
+  if (wfEnabled) clearWaterfall();
 }
 
 let saLastSweepTime = 0;
 let saProgressAnim = null;
+let saPeakAnnotation = null;
+
+function formatFreq(mhz) {
+  if (mhz >= 1000) return (mhz / 1000).toFixed(3) + ' GHz';
+  return mhz.toFixed(2) + ' MHz';
+}
+
+function buildPeakAnnotation(freqs, powers) {
+  let maxIdx = 0;
+  for (let i = 1; i < powers.length; i++) {
+    if (powers[i] > powers[maxIdx]) maxIdx = i;
+  }
+  const peakFreq = freqs[maxIdx];
+  const peakPow = powers[maxIdx];
+  const unit = saYAxisUnit || 'dBfs';
+  saPeakAnnotation = {
+    x: 1, xref: 'paper', xanchor: 'right',
+    y: 1, yref: 'paper', yanchor: 'top',
+    text: '<b>PEAK  ' + formatFreq(peakFreq) + '  ' + peakPow.toFixed(1) + ' ' + unit + '</b>',
+    showarrow: false,
+    font: {color: '#ffd400', size: 13, family: 'monospace'},
+    bgcolor: 'rgba(17,17,17,0.85)', borderpad: 5,
+  };
+  return saPeakAnnotation;
+}
+
+function allAnnotations(freqs, powers) {
+  const a = buildLabelAnnotations();
+  if (freqs && freqs.length) a.push(buildPeakAnnotation(freqs, powers));
+  else if (saPeakAnnotation) a.push(saPeakAnnotation);
+  return a;
+}
 
 function updateChart(bins) {
   const freqs = bins.map(b => b.f / 1e6);
   const powers = bins.map(b => b.p);
   const maxP = Math.max(...powers);
-  const yMax = maxP > -20 ? Math.ceil(maxP / 10) * 10 : -10;
+  const yMax = Math.ceil(maxP / 10) * 10 + 10;
+  // Shift current → previous
+  Plotly.restyle('sa-chart', {x: [saPrevFreqs], y: [saPrevPowers]}, [1]);
+  saPrevFreqs = freqs;
+  saPrevPowers = powers;
+  // Update current trace
   Plotly.restyle('sa-chart', {x: [freqs], y: [powers]}, [0]);
-  Plotly.relayout('sa-chart', {'yaxis.range': [-130, yMax]});
+  Plotly.relayout('sa-chart', {'yaxis.range': [-130, yMax], annotations: allAnnotations(freqs, powers)});
+  updateWaterfall(bins);
 
   // Estimate sweep duration from arrival interval, then animate progress 0→100%
   const now = performance.now();
@@ -656,9 +833,129 @@ document.getElementById('sa-labels-toggle').addEventListener('change', function(
   saShowLabels = this.checked;
   Plotly.relayout('sa-chart', {
     shapes: buildLabelShapes(),
-    annotations: buildLabelAnnotations(),
+    annotations: allAnnotations(null, null),
   });
 });
+
+document.getElementById('sa-prev-toggle').addEventListener('change', function() {
+  saShowPrev = this.checked;
+  Plotly.restyle('sa-chart', {visible: saShowPrev ? true : false}, [1]);
+});
+
+// ── Waterfall ─────────────────────────────────────────────────────────
+const WF_LUT = new Uint8Array(256 * 3);
+(function buildWaterfallLUT() {
+  const stops = [
+    [0,   0,   0,   0],
+    [64,  0,   0,   180],
+    [128, 0,   180, 180],
+    [192, 220, 220, 0],
+    [255, 255, 40,  0],
+  ];
+  for (let i = 0; i < 256; i++) {
+    let s = 0;
+    while (s < stops.length - 2 && stops[s + 1][0] < i) s++;
+    const a = stops[s], b = stops[s + 1];
+    const t = (i - a[0]) / (b[0] - a[0]);
+    const idx = i * 3;
+    WF_LUT[idx]     = Math.round(a[1] + t * (b[1] - a[1]));
+    WF_LUT[idx + 1] = Math.round(a[2] + t * (b[2] - a[2]));
+    WF_LUT[idx + 2] = Math.round(a[3] + t * (b[3] - a[3]));
+  }
+})();
+
+let wfEnabled = false;
+const wfCanvas = document.getElementById('sa-waterfall');
+const wfCtx = wfCanvas.getContext('2d', { willReadFrequently: false });
+let wfRow = null;
+const wfMinP = -120;
+const wfMaxP = -20;
+
+function sizeWaterfall() {
+  const w = wfCanvas.clientWidth;
+  const h = wfCanvas.clientHeight;
+  if (wfCanvas.width !== w || wfCanvas.height !== h) {
+    wfCanvas.width = w;
+    wfCanvas.height = h;
+    wfRow = null;
+  }
+}
+
+function clearWaterfall() {
+  sizeWaterfall();
+  wfCtx.fillStyle = '#0a0a0a';
+  wfCtx.fillRect(0, 0, wfCanvas.width, wfCanvas.height);
+}
+
+function updateWaterfall(bins) {
+  if (!wfEnabled || !bins.length) return;
+
+  sizeWaterfall();
+  const w = wfCanvas.width;
+  const h = wfCanvas.height;
+  if (w < 2 || h < 2) return;
+
+  const saDiv = document.getElementById('sa-chart');
+  const fl = saDiv._fullLayout;
+  if (!fl || !fl.xaxis) return;
+  const plotLeft = Math.round(fl.xaxis._offset);
+  const plotWidth = Math.round(fl.xaxis._length);
+
+  // Scroll existing content down 1 pixel
+  wfCtx.drawImage(wfCanvas, 0, 0, w, h - 1, 0, 1, w, h - 1);
+
+  // Allocate row ImageData (reuse when width unchanged)
+  if (!wfRow || wfRow.width !== w) wfRow = wfCtx.createImageData(w, 1);
+  const data = wfRow.data;
+  data.fill(0);
+  for (let px = 0; px < w; px++) data[px * 4 + 3] = 255;
+
+  const fMin = bins[0].f, fMax = bins[bins.length - 1].f;
+  const fRange = fMax - fMin;
+  if (fRange <= 0) return;
+
+  // Map bins to pixels and interpolate gaps
+  let lastPx = -1, lastQ = 0;
+  for (let i = 0; i < bins.length; i++) {
+    const t = (bins[i].f - fMin) / fRange;
+    const px = Math.round(plotLeft + t * plotWidth);
+    if (px < 0 || px >= w) continue;
+
+    let q = Math.round(((bins[i].p - wfMinP) / (wfMaxP - wfMinP)) * 255);
+    if (q < 0) q = 0; if (q > 255) q = 255;
+
+    // Fill gap from previous bin
+    if (lastPx >= 0 && px - lastPx > 1) {
+      for (let g = lastPx + 1; g < px; g++) {
+        const gt = (g - lastPx) / (px - lastPx);
+        let gq = Math.round(lastQ + gt * (q - lastQ));
+        if (gq < 0) gq = 0; if (gq > 255) gq = 255;
+        const ci = gq * 3, pi = g * 4;
+        data[pi] = WF_LUT[ci]; data[pi+1] = WF_LUT[ci+1]; data[pi+2] = WF_LUT[ci+2];
+      }
+    }
+
+    const ci = q * 3, pi = px * 4;
+    data[pi] = WF_LUT[ci]; data[pi+1] = WF_LUT[ci+1]; data[pi+2] = WF_LUT[ci+2];
+    lastPx = px; lastQ = q;
+  }
+
+  wfCtx.putImageData(wfRow, 0, 0);
+}
+
+document.getElementById('sa-waterfall-toggle').addEventListener('change', function() {
+  wfEnabled = this.checked;
+  wfCanvas.style.display = wfEnabled ? 'block' : 'none';
+  if (wfEnabled) clearWaterfall();
+});
+
+new ResizeObserver(function() {
+  if (!wfEnabled) return;
+  const old = wfCtx.getImageData(0, 0, wfCanvas.width, wfCanvas.height);
+  sizeWaterfall();
+  wfCtx.putImageData(old, 0, 0);
+  wfRow = null;
+}).observe(document.getElementById('sa-chart'));
 
 // RBW display
 function updateRBW() {
@@ -681,11 +978,16 @@ document.getElementById('sa-apply').addEventListener('click', () => {
   const sr    = document.getElementById('sa-sr').value;
   const fft   = document.getElementById('sa-fft').value;
   const radio = document.getElementById('sa-radio').value;
+  const step    = document.getElementById('sa-step').value;
+  const settle  = document.getElementById('sa-settle').value;
+  const measure = document.getElementById('sa-measure').value;
   fetch('/spectrum/config?start=' + start + '&stop=' + stop + '&gain=' + gain +
-        '&agc=' + agc + '&samplerate=' + sr + '&fftsize=' + fft + '&radio=' + radio)
+        '&agc=' + agc + '&samplerate=' + sr + '&fftsize=' + fft + '&radio=' + radio +
+        '&stepsize=' + step + '&settle=' + settle + '&measure=' + measure)
     .catch(console.error);
   // Refresh labels for new frequency range
-  Plotly.relayout('sa-chart', {shapes: buildLabelShapes(), annotations: buildLabelAnnotations()});
+  Plotly.relayout('sa-chart', {shapes: buildLabelShapes(), annotations: allAnnotations(null, null)});
+  if (wfEnabled) clearWaterfall();
 });
 
 // WebSocket
@@ -705,14 +1007,22 @@ function connectSA() {
       document.getElementById('sa-sr').value    = c.SampleRate;
       document.getElementById('sa-fft').value   = c.FFTSize;
       document.getElementById('sa-radio').value = c.Radio === 0 ? 'hif' : 's1g';
+      document.getElementById('sa-step').value    = c.StepSize;
+      document.getElementById('sa-settle').value  = c.SettleSamples;
+      document.getElementById('sa-measure').value = c.MeasureSamples;
       updateRBW();
       // S1G RSSI is calibrated dBm from the AT86RF215 RSSI register.
       // HiF power-envelope is uncalibrated dBfs (no absolute reference).
+      // S1G is always dBm; HiF is dBm only if calibrated (saYAxisUnit
+      // may have been set to 'dBm' by the cal status check on page load).
+      if (c.Radio === 1) saYAxisUnit = 'dBm';
+      else if (saYAxisUnit !== 'dBm') saYAxisUnit = 'dBfs';
       Plotly.relayout('sa-chart', {
-        'yaxis.title': c.Radio === 1 ? 'Power (dBm)' : 'Power (dBfs)',
+        'yaxis.title': 'Power (' + saYAxisUnit + ')',
         shapes: buildLabelShapes(),
-        annotations: buildLabelAnnotations(),
+        annotations: allAnnotations(null, null),
       });
+      if (wfEnabled) clearWaterfall();
     }
   };
   saWS.onclose = () => setTimeout(connectSA, 2000);
@@ -904,10 +1214,15 @@ function pollCalStatus() {
         bar.style.width = '100%';
         lbl.textContent = 'Complete — y-axis now shows dBm';
         // Switch y-axis label to dBm
+        saYAxisUnit = 'dBm';
         Plotly.relayout('sa-chart', {'yaxis.title': 'Power (dBm)'});
       }
     } else if (d.cal_info) {
       setBadge('cal-ok', d.cal_info);
+      if (saYAxisUnit !== 'dBm') {
+        saYAxisUnit = 'dBm';
+        Plotly.relayout('sa-chart', {'yaxis.title': 'Power (dBm)'});
+      }
     }
   }).catch(console.error);
 }

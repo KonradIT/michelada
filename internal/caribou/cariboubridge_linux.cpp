@@ -74,9 +74,6 @@ ReceiveData goCallback = nullptr;
 
 void receivedSamples(CaribouLiteRadio* radio, const std::complex<float>* samples, CaribouLiteMeta* sync, size_t num_samples)
 {
-    std::cout << "Radio: " << radio->GetRadioName() << "Freq: " << radio->GetFrequency() << " Received " << std::dec << num_samples << " samples "
-              << "RSSI: " << _rssi(samples, num_samples) << " dBm" << std::endl;
-
     if (goCallback) {
         goCallback(_rssi(samples, num_samples), radio->GetFrequency());
     }
@@ -94,8 +91,7 @@ void _readRssi(ReceiveData callback) {
     {
         std::cout << "The specified freq couldn't be used" << std::endl;
     }
-    s1g->SetRxGain(0);
-    s1g->SetAgc(false);
+    // Gain and AGC are configured by Go via SetS1GGain/SetS1GAGC before this call.
     // StartReceiving is non-blocking; the callback runs on a CaribouLite background thread.
     s1g->StartReceiving(receivedSamples);
 }
